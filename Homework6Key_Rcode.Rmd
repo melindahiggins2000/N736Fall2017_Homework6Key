@@ -1,0 +1,246 @@
+---
+title: "Homework 6 Answer Key"
+author: "Melinda K. Higgins, PhD."
+date: "November 22, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# set up knitr options
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = TRUE)
+knitr::opts_chunk$set(warning = TRUE)
+
+# load packages needed
+library(tidyverse)
+library(haven)
+
+# load dataset
+helpdat <- haven::read_spss("helpmkh.sav")
+
+# load knitr, printr, and kableExtra to get
+# nicer formatted tables for the outputs
+library(knitr)
+library(printr)
+library(kableExtra)
+```
+
+For this homework we'll use the `helpmkh` dataset. 
+
+Let's focus on `g1b` as the main outcome variable experienced serious thoughts of suicide (last 30 days) - Baseline which is dichotomous coded 0 and 1. 
+
+We'll use logistic regression to look at predicting whether someone had suicidal thoughts or not using these variables `age`, `female`, `pss_fr`, `pcs`, `mcs`, `cesd`, `homeless`, and `indtot`.
+
+Initially just look at `cesd` as a continuous predictor.
+
+Consider the continuous variable `cesd` as a predictor for `g1b` run a logistic regression of the probability of suicidal thoughts (`g1b`) given their depressive symptoms scores (`cesd`) make a plot of the the predicted probability of suicidal thoughts (`g1b`) by the depressive symptoms scores (`cesd`) what value of the `cesd` leads to a probability of suicidal thoughts => 0.5? _(hint: use the plot you just made)_
+
+```{r}
+# create subset of variables from helpmkh
+h1 <- helpdat %>%
+  select(g1b, age, female, pss_fr,
+         homeless, pcs, mcs, cesd, indtot)
+```
+
+Logistic regression of `cesd` to predict the probability of `g1b`, suicidal thoughts we'll also SAVE the predicted probabilities and the predicted group membership.
+
+```{r}
+m1 <- glm(g1b ~ cesd, data=h1,
+          family=binomial)
+```
+
+## Model results
+
+```{r}
+m1
+summary(m1)
+```
+
+Remember, in `R` you have to use the `exp()` function to get the odds ratios from the raw coefficients.
+
+```{r}
+kable(coef(m1),
+      col.names = c("Raw Coefficients"),
+      caption="Raw Coefficients",
+      "html") %>%
+  kable_styling(full_width = FALSE)
+kable(exp(coef(m1)),
+      col.names = c("Odds Ratios"),
+      caption="Odds Ratios",
+      "html") %>%
+  kable_styling(full_width = FALSE)
+```
+
+## Model predictions
+
+Using the `predict()` function, get the predicted probabilities and plot them against the `cesd` as the predictor.
+
+```{r}
+m1.predict <- predict(m1, newdata=h1,
+                      type="response")
+plot(h1$cesd, m1.predict,
+     main="Predicted Probabilities")
+lines(c(0,60),c(0.5,0.5),col="red")
+```
+
+## Classification Table
+
+The output below shows the results using the base R function `table()` and the `CrossTable()` function output from the `gmodels` package which we demonstrated in class. These initial tables used a cutoff threshold of 0.5.
+
+```{r}
+#confusion matrix
+kable(table(h1$g1b, m1.predict > 0.5),
+      caption="Confusion Matrix / Classification Table",
+      "html") %>%
+  kable_styling(full_width = FALSE)
+
+library(gmodels)
+CrossTable(h1$g1b, m1.predict > 0.5)
+```
+
+Let's also look at results for several other thresholds:
+
+* predicted probability > 0.2
+
+```{r}
+CrossTable(h1$g1b, m1.predict > 0.2)
+```
+
+* predicted probability > 0.4
+
+```{r}
+CrossTable(h1$g1b, m1.predict > 0.4)
+```
+
+* predicted probability > 0.6
+
+```{r}
+CrossTable(h1$g1b, m1.predict > 0.6)
+```
+
+* predicted probability > 0.8
+
+```{r}
+CrossTable(h1$g1b, m1.predict > 0.8)
+```
+
+## Make a ROC (receiver operating characteristic) curve
+
+You can see an online example at [https://www.r-bloggers.com/how-to-perform-a-logistic-regression-in-r/](https://www.r-bloggers.com/how-to-perform-a-logistic-regression-in-r/)
+
+```{r}
+library(ROCR)
+p <- predict(m1, newdata=h1, 
+             type="response")
+pr <- prediction(p, as.numeric(h1$g1b))
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
+lines(c(0,1),c(0,1),col="blue")
+```
+
+## AUC - Area Under the Curve statistic
+
+We can also compute the area under the curve (AUC) - the closer to 1 the better the model predictions.
+
+```{r}
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+## Variable Selection
+
+Using variable selection methods, develop a logistic regression model for the probability of suicidal thoughts (`g1b`) considering all of these variables for possible inclusion: `age`, `female`, `pss_fr`, `homeless`, `pcs`, `mcs`, `cesd`, `indtot`.
+
+Look at all variables in the model together without any variable selection. The significant variables are:
+
+* `female`
+* `homeless`
+* `mcs`
+* `cesd`
+
+```{r}
+# run the logistic regression entering all
+# variables at once
+m2 <- glm(g1b ~ ., data=h1, family=binomial)
+summary(m2)
+```
+
+## Variable selection
+
+You could simply choose to keep the significant variables, which were `female`, `homeless`, `mcs` and `cesd`.
+
+However, there are some variable selection approaches in `R`. In base `R` you can use the `step()` function.
+
+```{r}
+# OPTIONAL - NOT COVERED IN CLASS
+# ==========================================
+# stepwise variable selection using step()
+m0 <- glm(g1b ~ 1, data=h1, family=binomial)
+m1 <- glm(g1b ~ ., data=h1, family=binomial)
+step(m0,scope=formula(m1),direction="forward",k=2) # AIC
+```
+
+A slightly improved version of the `step()` function is the `stepAIC()` function from the `MASS` package. There are several `IC` options for the information criterion for variable selection. The code below shows how to run the code using the AIC criterion or the BIC criterion - with `forward` variable selection.
+
+### AIC Criterion - forward variable selection
+
+```{r}
+library(MASS)
+stepAIC(m0,scope=formula(m1),direction="forward",k=2) #AIC criterion
+```
+
+### BIC criterion - forward variable selection
+
+```{r}
+n <- 453 # get sample size
+stepAIC(m0,scope=formula(m1),direction="forward",k=log(n)) #BIC criterion
+```
+
+### AIC Criterion - both (forward and backward) variable selection
+
+```{r}
+# try both
+stepAIC(m0,scope=formula(m1),direction="both",k=2) #AIC
+```
+
+In general variable selection methods are problematic for many reasons some of which include low power and selection biases that occur depending on the algorithms used. I encourage you to read more on LASSO (least absolute shrinkage and selection operator) approaches, see [https://en.wikipedia.org/wiki/Lasso_(statistics)](https://en.wikipedia.org/wiki/Lasso_(statistics)) and Rob Tibshirani's website on the LASSO approach he developed [http://statweb.stanford.edu/~tibs/lasso.html](http://statweb.stanford.edu/~tibs/lasso.html).
+
+That said, there is also a package called `bestglm` which has a main function `bestglm()` that employs several different algorithms and information criteria for selecting variables. The examples below show how to select variables based on the AIC criterion and based on using CV which is a cross-validation approach - read more in the help for bestglm [`help(bestglm)`].
+
+### Basic `bestglm()` variable selection approach
+
+Notice the data has to be restructured slightly for the function to run.
+
+```{r}
+# try bestglm package
+# create Xy dataset
+# X should contain the vars
+# you want to select among
+# and the last column should be y the outcome
+X <- h1[,2:9]
+y <- h1$g1b
+
+library(bestglm)
+Xy <- cbind(X,y)
+out <- bestglm(Xy)
+out
+```
+
+### AIC `bestglm()` variable selection approach
+
+```{r}
+# bestglm uses the BIC criterion for selection
+# by default, you can try other information 
+# criterion also like AIC or CV (cross validation)
+bestglm(Xy, IC="AIC")
+```
+
+### CV `bestglm()` variable selection approach
+
+Note: The corss-validation approach runs through several selection options, so this option takes a few minutes to run.
+
+```{r}
+bestglm(Xy, IC="CV")
+```
+
